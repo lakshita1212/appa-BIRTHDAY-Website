@@ -46,7 +46,7 @@ export function HeroSection() {
               </div>
 
               <p className="text-white text-lg md:text-2xl font-bold">
-                ~ 1974 ~
+                ~ 1971 ~
                 <br />
                 <span className="text-[#00ced1] uppercase tracking-wider">
                   Imported from India

@@ -285,11 +285,9 @@ export function EntryScreen({ onReveal }: EntryScreenProps) {
               HAPPY BIRTHDAY!
             </h2>
             <p className="text-xl md:text-2xl text-foreground font-bold mb-3">
-              We told you not to click it, Appa!
+              I told you not to click it, Appa
             </p>
-            <p className="text-lg text-muted-foreground">
-              But we knew you would anyway. We love you!
-            </p>
+            
             <button
               onClick={handleDismiss}
               className="mt-8 px-8 py-4 bg-primary text-primary-foreground font-bold text-lg uppercase tracking-wider rounded-xl hover:scale-105 transition-transform"

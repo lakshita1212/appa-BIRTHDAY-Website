@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect, useCallback } from "react"
+import { useState, useRef, useEffect } from "react"
 import { Play, Pause, Volume2, VolumeX, Music, ChevronUp, ChevronDown, SkipBack, SkipForward } from "lucide-react"
 import { Slider } from "@/components/ui/slider"
 import { cn } from "@/lib/utils"
@@ -28,39 +28,44 @@ export function Jukebox() {
 
   const currentSong = songs[currentSongIndex]
 
-  // 1. AUTO-PLAY ON MOUNT (Triggered by isRevealed in page.tsx)
+  // 1. IMPROVED AUTO-PLAY
   useEffect(() => {
     const audio = audioRef.current
     if (!audio) return
 
-    const playOnMount = async () => {
+    const attemptPlay = async () => {
+      // We set the source explicitly to ensure it's ready
+      audio.src = songs[0].file
+      audio.load()
+      audio.volume = volume / 100
+
       try {
-        audio.volume = volume / 100
+        // We wait a tiny bit for the component to settle
+        await new Promise(resolve => setTimeout(resolve, 100))
         await audio.play()
         setIsPlaying(true)
       } catch (err) {
-        console.log("Waiting for interaction to play")
+        console.log("Autoplay blocked. Waiting for manual play or second click.")
+        // If it fails, we keep isPlaying false so the user can click Play
+        setIsPlaying(false)
       }
     }
 
-    playOnMount()
+    attemptPlay()
 
     return () => {
       audio.pause()
-      audio.src = ""
     }
-  }, [])
+  }, []) // Only runs once when Jukebox appears
 
-  // 2. TRACK CHANGE LOGIC
+  // 2. TRACK CHANGE
   useEffect(() => {
     const audio = audioRef.current
-    if (!audio) return
+    if (!audio || !isPlaying) return
 
-    audio.pause()
+    audio.src = currentSong.file
     audio.load()
-    if (isPlaying) {
-      audio.play().catch(() => {})
-    }
+    audio.play().catch(() => setIsPlaying(false))
   }, [currentSongIndex])
 
   // 3. LISTENERS
@@ -68,22 +73,22 @@ export function Jukebox() {
     const audio = audioRef.current
     if (!audio) return
 
-    const handleTimeUpdate = () => setCurrentTime(audio.currentTime)
-    const handleLoadedMetadata = () => setDuration(audio.duration)
-    const handleEnded = () => nextSong()
+    const handleTime = () => setCurrentTime(audio.currentTime)
+    const handleMeta = () => setDuration(audio.duration)
+    const handleEnd = () => nextSong()
 
-    audio.addEventListener("timeupdate", handleTimeUpdate)
-    audio.addEventListener("loadedmetadata", handleLoadedMetadata)
-    audio.addEventListener("ended", handleEnded)
+    audio.addEventListener("timeupdate", handleTime)
+    audio.addEventListener("loadedmetadata", handleMeta)
+    audio.addEventListener("ended", handleEnd)
 
     return () => {
-      audio.removeEventListener("timeupdate", handleTimeUpdate)
-      audio.removeEventListener("loadedmetadata", handleLoadedMetadata)
-      audio.removeEventListener("ended", handleEnded)
+      audio.removeEventListener("timeupdate", handleTime)
+      audio.removeEventListener("loadedmetadata", handleMeta)
+      audio.removeEventListener("ended", handleEnd)
     }
-  }, [currentSongIndex, isPlaying])
+  }, [])
 
-  // 4. VOLUME SYNC
+  // 4. VOLUME
   useEffect(() => {
     if (audioRef.current) {
       audioRef.current.volume = isMuted ? 0 : volume / 100
@@ -101,94 +106,69 @@ export function Jukebox() {
     }
   }
 
-  const prevSong = () => {
-    setCurrentSongIndex((prev) => (prev === 0 ? songs.length - 1 : prev - 1))
-    setIsPlaying(true)
-  }
+  const nextSong = () => setCurrentSongIndex((prev) => (prev + 1) % songs.length)
+  const prevSong = () => setCurrentSongIndex((prev) => (prev === 0 ? songs.length - 1 : prev - 1))
 
-  const nextSong = () => {
-    setCurrentSongIndex((prev) => (prev === songs.length - 1 ? 0 : prev + 1))
-    setIsPlaying(true)
-  }
-
-  const formatTime = (seconds: number) => {
-    if (!seconds || isNaN(seconds)) return "0:00"
-    const mins = Math.floor(seconds / 60)
-    const secs = Math.floor(seconds % 60)
-    return `${mins}:${secs.toString().padStart(2, "0")}`
+  const formatTime = (s: number) => {
+    if (!s || isNaN(s)) return "0:00"
+    return `${Math.floor(s / 60)}:${Math.floor(s % 60).toString().padStart(2, "0")}`
   }
 
   return (
-    <>
-      <audio ref={audioRef} src={currentSong.file} preload="auto" />
+    <div className={cn(
+      "fixed bottom-0 left-1/2 -translate-x-1/2 z-50 transition-all duration-500 w-full max-w-2xl px-4",
+      isOpen ? "translate-y-0" : "translate-y-[calc(100%-64px)]"
+    )}>
+      <audio ref={audioRef} preload="auto" />
+      
+      <div className="rounded-t-3xl border border-white/20 bg-slate-900/90 backdrop-blur-xl p-4 shadow-2xl">
+        {/* Header */}
+        <button onClick={() => setIsOpen(!isOpen)} className="w-full flex items-center gap-3 pb-4">
+          <div className={cn("w-10 h-10 rounded-full bg-zinc-800 border-2 border-[#00ced1] flex items-center justify-center", isPlaying && "animate-spin")}>
+            <div className="w-2 h-2 rounded-full bg-[#00ced1]" />
+          </div>
+          <div className="flex-1 text-left">
+            <p className="text-[#00ced1] text-xs font-bold uppercase">Appa's Jukebox</p>
+            <p className="text-white text-sm truncate">{currentSong.title}</p>
+          </div>
+          {isOpen ? <ChevronDown className="text-white/50" /> : <ChevronUp className="text-white/50" />}
+        </button>
 
-      <div className={cn(
-        "fixed bottom-0 left-1/2 -translate-x-1/2 z-50 transition-all duration-500 ease-out w-full max-w-2xl px-4",
-        isOpen ? "translate-y-0" : "translate-y-[calc(100%-64px)]"
-      )}>
-        <div className="rounded-t-3xl overflow-hidden shadow-2xl border border-white/20 bg-slate-900/85 backdrop-blur-xl"
-          style={{ boxShadow: "0 -10px 60px rgba(0, 206, 209, 0.3)" }}>
+        {/* Player Controls */}
+        <div className="space-y-4 px-2">
+          <div className="flex gap-2">
+            {songs.map((s, i) => (
+              <button 
+                key={s.id} 
+                onClick={() => { setCurrentSongIndex(i); setIsPlaying(true); }}
+                className={cn("flex-1 py-2 rounded-lg text-[10px] font-bold uppercase transition-all", 
+                  currentSongIndex === i ? "bg-[#00ced1] text-white" : "bg-white/10 text-white/40")}
+              >
+                {s.title}
+              </button>
+            ))}
+          </div>
+
+          <Slider 
+            value={[currentTime]} 
+            max={duration || 100} 
+            onValueChange={(v) => { if(audioRef.current) audioRef.current.currentTime = v[0] }} 
+          />
           
-          <button onClick={() => setIsOpen(!isOpen)} className="w-full flex items-center justify-center gap-3 py-4 px-6 hover:bg-white/5 transition-colors">
-            <div className="relative w-10 h-10">
-              <div className={cn("absolute inset-0 rounded-full bg-zinc-800 border-2 border-zinc-700", isPlaying && "animate-spin")} style={{ animationDuration: "3s" }}>
-                <div className="absolute inset-0 m-auto w-3 h-3 rounded-full bg-[#00ced1]" />
-              </div>
-            </div>
-            <div className="flex-1 text-left">
-              <p className="text-[#00ced1] font-bold text-sm uppercase tracking-wider">Appa's Jukebox</p>
-              <p className="text-white/70 text-xs truncate max-w-[200px]">{isPlaying ? `Playing: ${currentSong.title}` : "Paused"}</p>
-            </div>
-            <Music className="w-5 h-5 text-[#00ced1]" />
-            {isOpen ? <ChevronDown className="w-5 h-5 text-white/50" /> : <ChevronUp className="w-5 h-5 text-white/50" />}
-          </button>
+          <div className="flex justify-between text-[10px] text-white/50 mt-1">
+            <span>{formatTime(currentTime)}</span>
+            <span>{formatTime(duration)}</span>
+          </div>
 
-          <div className="px-6 pb-6">
-            <div className="flex gap-2 mb-6">
-              {songs.map((song, index) => (
-                <button
-                  key={song.id}
-                  onClick={() => { setCurrentSongIndex(index); setIsPlaying(true); }}
-                  className={cn("flex-1 py-3 rounded-xl font-bold text-xs uppercase tracking-wider transition-all",
-                    currentSongIndex === index ? "bg-[#00ced1] text-white shadow-lg shadow-[#00ced1]/30" : "bg-white/10 text-white/70 hover:bg-white/20"
-                  )}
-                >
-                  {song.title}
-                </button>
-              ))}
-            </div>
-
-            <div className="flex items-center gap-6 mb-6">
-              <div className={cn("relative w-20 h-20 flex-shrink-0 rounded-full bg-zinc-800 border-4 border-zinc-600 shadow-xl", isPlaying && "animate-spin")} style={{ animationDuration: "4s" }}>
-                <div className="absolute inset-0 m-auto w-6 h-6 rounded-full bg-[#00ced1]" />
-              </div>
-              <div className="flex-1">
-                <p className="text-white font-bold text-lg mb-1">{currentSong.title}</p>
-                <Slider value={[currentTime]} min={0} max={duration || 100} step={0.1} onValueChange={(v) => audioRef.current && (audioRef.current.currentTime = v[0])} />
-                <div className="flex justify-between text-[10px] text-white/50 mt-1">
-                  <span>{formatTime(currentTime)}</span>
-                  <span>{formatTime(duration)}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-center gap-4 mb-4">
-              <button onClick={prevSong} className="p-3 rounded-full bg-white/10 text-white hover:scale-110"><SkipBack /></button>
-              <button onClick={togglePlay} className="p-5 rounded-full bg-[#00ced1] text-white shadow-lg hover:scale-110">
-                {isPlaying ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6 ml-1" />}
-              </button>
-              <button onClick={nextSong} className="p-3 rounded-full bg-white/10 text-white hover:scale-110"><SkipForward /></button>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <button onClick={() => setIsMuted(!isMuted)} className="text-white/50 hover:text-white">
-                {isMuted ? <VolumeX /> : <Volume2 />}
-              </button>
-              <Slider value={[isMuted ? 0 : volume]} min={0} max={100} onValueChange={(v) => setVolume(v[0])} className="flex-1" />
-            </div>
+          <div className="flex justify-center items-center gap-6">
+            <button onClick={prevSong} className="text-white/70"><SkipBack /></button>
+            <button onClick={togglePlay} className="w-14 h-14 bg-[#00ced1] rounded-full flex items-center justify-center text-white shadow-lg">
+              {isPlaying ? <Pause size={28} /> : <Play size={28} fill="white" />}
+            </button>
+            <button onClick={nextSong} className="text-white/70"><SkipForward /></button>
           </div>
         </div>
       </div>
-    </>
+    </div>
   )
 }
